@@ -1,12 +1,13 @@
 import type {Availability,Employee,Assignment,Shift} from '../shared/types';
+import {SCHEDULING_RULES} from '../shared/rules';
 
 export function monthDates(month:string){
   const [year,m]=month.split('-').map(Number); const last=new Date(Date.UTC(year,m,0)).getUTCDate();
-  return Array.from({length:last-27},(_,i)=>`${month}-${String(i+28).padStart(2,'0')}`);
+  return Array.from({length:last-SCHEDULING_RULES.startDay+1},(_,i)=>`${month}-${String(i+SCHEDULING_RULES.startDay).padStart(2,'0')}`);
 }
 
 export function generateSchedule(month:string,employees:Employee[],availability:Availability[],existing:Assignment[]=[]):Assignment[]{
-  const dates=monthDates(month), shifts:Shift[]=['morning','afternoon'];
+  const dates=monthDates(month), shifts:Shift[]=SCHEDULING_RULES.shifts.map(s=>s.id);
   const fixed=new Map(existing.filter(x=>x.source==='manual').map(x=>[`${x.work_date}:${x.shift}`,x]));
   const used=new Set<number>(existing.filter(x=>x.source==='manual'&&x.employee_id).map(x=>x.employee_id!));
   const result:Assignment[]=[];
