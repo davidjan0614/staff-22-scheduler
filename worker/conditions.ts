@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { Availability, RecurringCondition } from "../shared/types";
 import {
   blockedShifts,
@@ -9,6 +10,14 @@ import { digest } from "./sms";
 
 type Bindings = { DB: D1Database };
 export const conditions = new Hono<{ Bindings: Bindings }>();
+conditions.use(
+  "*",
+  bodyLimit({
+    maxSize: 1024 * 1024,
+    onError: (c) =>
+      c.json({ error: "一次修改的內容過多，請分人員或月份儲存。" }, 413),
+  }),
+);
 const validScope = (s: string) => validMonth(s) || /^[1-9]\d{3}$/.test(s);
 async function read(db: D1Database, scope: string) {
   const a = await db
@@ -37,8 +46,8 @@ conditions.put("/:scope", async (c) => {
   const scope = c.req.param("scope");
   if (!validScope(scope)) return c.json({ error: "日期範圍錯誤" }, 400);
   const b = await c.req.json<{ revision: string; items: Availability[] }>();
-  if (!Array.isArray(b.items) || b.items.length > 100 || !b.items.length)
-    return c.json({ error: "一次請儲存 1 至 100 筆條件" }, 400);
+  if (!Array.isArray(b.items) || !b.items.length)
+    return c.json({ error: "請至少選擇一筆條件" }, 400);
   const ids = new Set<string>();
   for (const a of b.items) {
     const key = `${a.employee_id}:${a.work_date}`;
@@ -68,18 +77,25 @@ conditions.put("/:scope", async (c) => {
     b.items.some((a) => !employees.results.some((e) => e.id === a.employee_id))
   )
     return c.json({ error: "找不到人員" }, 400);
-  const statements = b.items.map((a) =>
+  // One SQL statement for the whole submission: adding staff must not increase
+  // the statement count or hit the former 100-date limit.
+  const statements = [
     c.env.DB.prepare(
-      `INSERT INTO availability(employee_id,work_date,status,preferred_shift,note,blocked_shifts) VALUES(?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET status=excluded.status,preferred_shift=excluded.preferred_shift,note=excluded.note,blocked_shifts=excluded.blocked_shifts`,
+      `
+    INSERT INTO availability(employee_id,work_date,status,preferred_shift,note,blocked_shifts)
+    SELECT json_extract(value,'$.employee_id'),json_extract(value,'$.work_date'),
+           json_extract(value,'$.status'),json_extract(value,'$.preferred_shift'),
+           json_extract(value,'$.note'),json_extract(value,'$.blocked_shifts')
+    FROM json_each(?) WHERE 1
+    ON CONFLICT(employee_id,work_date) DO UPDATE SET status=excluded.status,
+      preferred_shift=excluded.preferred_shift,note=excluded.note,blocked_shifts=excluded.blocked_shifts
+  `,
     ).bind(
-      a.employee_id,
-      a.work_date,
-      a.status,
-      a.preferred_shift,
-      a.note,
-      JSON.stringify(blockedShifts(a)),
+      JSON.stringify(
+        b.items.map((a) => ({ ...a, blocked_shifts: blockedShifts(a) })),
+      ),
     ),
-  );
+  ];
   statements.push(
     c.env.DB.prepare("INSERT INTO audit_logs(action,detail) VALUES(?,?)").bind(
       "批次設定不可排時段",

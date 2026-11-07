@@ -66,7 +66,7 @@ export function Conditions({
             className={mode === "month" ? "selected" : ""}
             onClick={() => changeMode("month")}
           >
-            當月 22 人總覽
+            當月人員總覽
           </button>
           <button
             className={mode === "year" ? "selected" : ""}
@@ -428,7 +428,9 @@ function Annual({
   onSaved: () => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [id, setId] = useState(data.employees.find((e) => e.active)?.id || 0),
+  const [id, setId] = useState(
+      data.employees.find((e) => e.active)?.id || data.employees[0]?.id || 0,
+    ),
     [snapshot, setSnapshot] = useState<Snapshot | null>(null),
     [draft, setDraft] = useState<Record<string, boolean>>({}),
     [fixed, setFixed] = useState<RecurringCondition[]>([]),
@@ -493,6 +495,7 @@ function Annual({
           {data.employees.map((e) => (
             <option key={e.id} value={e.id}>
               {e.name}
+              {!e.active ? "（已停用）" : ""}
             </option>
           ))}
         </select>

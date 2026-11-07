@@ -241,6 +241,72 @@ describe("月底條件與備份相容性", () => {
   });
 });
 
+describe("人員增減與歷史保留", () => {
+  it("人數增加至 30 人，整月超過 100 筆條件仍可一次儲存", async () => {
+    for (let i = 23; i <= 30; i++)
+      expect(
+        (await call("/api/employees", "POST", { name: `新增人員 ${i}` }))
+          .status,
+      ).toBe(201);
+    const data = await json("/api/month/2027-01");
+    expect(data.employees.filter((e: any) => e.active)).toHaveLength(30);
+    const snapshot = await json("/api/conditions/2027-01");
+    const items = data.employees.flatMap((e: any) =>
+      datesInMonth("2027-01").map((work_date) => ({
+        employee_id: e.id,
+        work_date,
+        status: "available",
+        preferred_shift: null,
+        note: "",
+        blocked_shifts: e.id === 30 ? ["morning"] : [],
+      })),
+    );
+    expect(items).toHaveLength(120);
+    expect(
+      (
+        await call("/api/conditions/2027-01", "PUT", {
+          revision: snapshot.revision,
+          items,
+        })
+      ).status,
+    ).toBe(200);
+    const saved = await json("/api/conditions/2027-01");
+    expect(saved.availability).toHaveLength(120);
+    expect(
+      JSON.parse(
+        saved.availability.find((a: any) => a.employee_id === 30)
+          .blocked_shifts,
+      ),
+    ).toEqual(["morning"]);
+  });
+  it("離職停用不刪歷史、不再自動排新班，重新啟用沿用同一人紀錄", async () => {
+    await call("/api/schedules/assignment", "PUT", {
+      work_date: "2026-11-28",
+      shift: "morning",
+      employee_id: 1,
+    });
+    await call("/api/employees/1", "PATCH", { active: false });
+    const data = await json("/api/month/2026-11");
+    expect(data.employees.filter((e: any) => e.active)).toHaveLength(21);
+    expect(
+      data.assignments.find((a: any) => a.employee_id === 1).employee_name,
+    ).toBeTruthy();
+    await call("/api/schedules/generate", "POST", { month: "2027-01" });
+    expect(
+      (await json("/api/month/2027-01")).assignments.every(
+        (a: any) => a.employee_id !== 1,
+      ),
+    ).toBe(true);
+    await call("/api/employees/1", "PATCH", { active: true });
+    const restored = await json("/api/month/2026-11");
+    expect(restored.employees.filter((e: any) => e.active)).toHaveLength(22);
+    expect(restored.employees.find((e: any) => e.id === 1).annualCount).toBe(1);
+    expect(
+      restored.assignments.find((a: any) => a.employee_id === 1),
+    ).toBeTruthy();
+  });
+});
+
 async function readySms() {
   env.SMS_ENABLED = "true";
   env.TWILIO_ACCOUNT_SID = "AC-test";
@@ -277,13 +343,11 @@ describe("簡訊發送與本人確認", () => {
   });
   it("同一份預覽重複送出只發一次，GET 不會代替本人確認", async () => {
     const p = await readySms();
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ sid: "SM-test", status: "queued" }), {
-          status: 201,
-        }),
-      );
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ sid: "SM-test", status: "queued" }), {
+        status: 201,
+      }),
+    );
     vi.stubGlobal("fetch", fetch);
     const res = await call("/api/sms/2027-11/send", "POST", {
       revision: p.revision,
