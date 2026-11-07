@@ -391,10 +391,14 @@ function Schedule({
                   >
                     <option value="">缺額待安排</option>
                     {data!.employees
-                      .filter((e) => e.active)
+                      .filter((e) => e.active || e.id === a?.employee_id)
                       .map((e) => (
                         <option key={e.id} value={e.id}>
-                          {e.name}（年度 {e.annualCount || 0}）
+                          {e.name}（
+                          {e.active
+                            ? `年度 ${e.annualCount || 0}`
+                            : "已停用・保留原班次"}
+                          ）
                         </option>
                       ))}
                   </select>
@@ -545,7 +549,9 @@ function PersonDialog({
               perform(
                 () =>
                   api.updateEmployee(employee.id, { active: !employee.active }),
-                employee.active ? "已停用人員" : "已重新啟用",
+                employee.active
+                  ? "已停用人員；原有班次保留，請檢查未來班表是否需要換人。"
+                  : "已重新啟用",
               )
             }
           >
