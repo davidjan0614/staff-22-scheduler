@@ -3,7 +3,7 @@
   "name": "staff-22-scheduler",
   "main": "worker/index.ts",
   "compatibility_date": "2026-11-06",
-  "assets": { "directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+  "assets": { "directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/confirm/*"] },
   "d1_databases": [{ "binding": "DB", "database_name": "staff-22-scheduler-db", "database_id": "f23bf763-d7f1-446b-acf6-66b3ff4ed0d7", "migrations_dir": "migrations" }],
-  "vars": { "SESSION_TTL_HOURS": "12" }
+  "vars": { "SESSION_TTL_HOURS": "12", "SMS_ENABLED": "false", "PUBLIC_BASE_URL": "https://staff-22-scheduler.voice-line-reminder.workers.dev" }
 }
