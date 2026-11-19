@@ -74,10 +74,9 @@ export default function App() {
     <div className="app">
       <header>
         <div className="brand">
-          <div className="brand-mark">彥宏大</div>
           <div>
-            <h1>人員排班中心</h1>
-            <p>月底值班 · 年度公平分配</p>
+            <h1>人員值班</h1>
+            <p>班次安排與通知</p>
           </div>
         </div>
         <button
@@ -255,8 +254,7 @@ function Login({ onDone }: { onDone: () => void }) {
           }
         }}
       >
-        <div className="brand-mark large">彥宏大</div>
-        <h1>人員排班中心</h1>
+        <h1>人員值班</h1>
         <p>管理員登入後可排班與調整人員條件</p>
         <label>
           管理密碼
@@ -345,7 +343,7 @@ function Schedule({
     <section className="schedule">
       <div className="section-head">
         <div>
-          <h2>月底值班表</h2>
+          <h2>值班表</h2>
           <p>點選姓名可由 Admin 手動換人；重複第 2 班會顯示提醒。</p>
         </div>
         <button className="secondary" onClick={() => window.print()}>

@@ -96,7 +96,7 @@ export async function previewSms(
       ]);
       const old = history.results.find((h) => h.fingerprint === fingerprint);
       const shift = SCHEDULING_RULES.shifts.find((s) => s.id === row.shift)!;
-      const body = `【彥宏大值班通知】${row.name}，您排定 ${row.work_date} ${shift.label} ${shift.time} 值班。請開啟連結確認：`;
+      const body = `【人員值班通知】${row.name}，您排定 ${row.work_date} ${shift.label} ${shift.time} 值班。請開啟連結確認：`;
       const state = old
         ? old.confirmed_at
           ? "confirmed"
@@ -369,6 +369,6 @@ smsPublic.on(["GET", "POST"], "/:token", async (c) => {
     ? `${row.work_date} ${SCHEDULING_RULES.shifts.find((s) => s.id === row.shift)?.label || ""}`
     : "班表可能已調整或日期已過，請向排班管理員確認。";
   return c.html(
-    `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui;background:#f5f4ef;padding:24px;color:#17231c}main{max-width:440px;margin:10vh auto;background:white;padding:28px;border-radius:20px}button{background:#1f6b45;color:white;border:0;border-radius:12px;padding:16px;width:100%;font-size:18px}p{line-height:1.7}</style><main><p>彥宏大 · 值班通知</p><h1>${title}</h1><p>${escape(detail)}</p>${valid && !confirmed ? '<p>確認後，排班管理員就能知道您已收到通知。</p><form method="post"><button>我已確認值班</button></form>' : ""}</main></html>`,
+    `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui;background:#f5f4ef;padding:24px;color:#17231c}main{max-width:440px;margin:10vh auto;background:white;padding:28px;border-radius:20px}button{background:#1f6b45;color:white;border:0;border-radius:12px;padding:16px;width:100%;font-size:18px}p{line-height:1.7}</style><main><p>人員值班通知</p><h1>${title}</h1><p>${escape(detail)}</p>${valid && !confirmed ? '<p>確認後，排班管理員就能知道您已收到通知。</p><form method="post"><button>我已確認值班</button></form>' : ""}</main></html>`,
   );
 });
