@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { MonthData, SmsPreview } from "../shared/types";
+import type { MonthData, NotificationSettings, SmsPreview } from "../shared/types";
 import { request } from "./api";
 const status: Record<string, string> = {
   ready: "待通知",
@@ -27,9 +27,11 @@ export function Notifications({
   const [preview, setPreview] = useState<SmsPreview | null>(null),
     [busy, setBusy] = useState(false),
     [approved, setApproved] = useState(false),
+    [settings, setSettings] = useState<NotificationSettings | null>(null),
     [message, setMessage] = useState("");
   async function load() {
-    setPreview(await request<SmsPreview>(`/api/sms/${month}`));
+    const next=await request<SmsPreview>(`/api/sms/${month}`);
+    setPreview(next); setSettings(next.settings);
     setApproved(false);
   }
   useEffect(() => {
@@ -55,7 +57,7 @@ export function Notifications({
         <div>
           <h2>手機簡訊通知</h2>
           <p>
-            先確認班表與手機號碼，再由管理員發送。排班或換人不會自動發出簡訊。
+            可由管理員手動發送，或設定提前天數與時間自動排程；班表換人後會重新計算。
           </p>
         </div>
         <button className="secondary" disabled={busy} onClick={() => act(load)}>
@@ -64,6 +66,16 @@ export function Notifications({
       </div>
       {preview && (
         <>
+          {settings && <div className="notification-settings">
+            <div className="section-head"><div><h3>通知發送時間</h3><p>系統會依每一班日期計算，班表換人後自動重新計算。</p></div><span className={`mode-badge ${settings.mode}`}>{settings.mode==='automatic'?'自動排程':'管理員手動'}</span></div>
+            <div className="settings-grid">
+              <label>發送方式<select value={settings.mode} onChange={e=>setSettings({...settings,mode:e.target.value as NotificationSettings['mode']})}><option value="automatic">自動排程發送</option><option value="manual">管理員確認後發送</option></select></label>
+              <label>提前天數<select value={settings.lead_days} onChange={e=>setSettings({...settings,lead_days:Number(e.target.value)})}><option value={3}>提前 3 天</option><option value={5}>提前 5 天</option><option value={7}>提前 7 天</option><option value={1}>提前 1 天</option><option value={0}>當天</option></select></label>
+              <label>發送時間<input type="time" value={settings.send_time} onChange={e=>setSettings({...settings,send_time:e.target.value})}/></label>
+              <button className="primary" disabled={busy} onClick={()=>act(async()=>{await request('/api/sms/settings/current',{method:'PUT',body:JSON.stringify(settings)});await load();setMessage('通知排程設定已儲存')})}>儲存通知設定</button>
+            </div>
+            <p className="schedule-explain">{settings.mode==='automatic'?`將在每班值勤前 ${settings.lead_days} 天 ${settings.send_time} 自動發送；簡訊服務未啟用時不會扣費或發送。`:'目前不會自動發送，必須由管理員核對後按下發送。'}</p>
+          </div>}
           <div className="notice" role="status">
             {preview.reason}
           </div>
@@ -81,7 +93,7 @@ export function Notifications({
                       {item.shift === "morning" ? "早班" : "下午班"}
                     </b>
                     <span className="badge">
-                      {status[item.state] || item.state}
+                      {item.state==='ready'&&settings?.mode==='automatic'?'已排程':status[item.state] || item.state}
                     </span>
                   </div>
                   <p>
@@ -93,6 +105,7 @@ export function Notifications({
                         )
                       : "尚未填寫"}
                   </p>
+                  <p className="planned-time">預計發送：{new Date(item.scheduled_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}</p>
                   <blockquote>{item.body}［個人值班確認連結］</blockquote>
                 </article>
               ))

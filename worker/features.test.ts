@@ -65,6 +65,7 @@ beforeEach(() => {
     "0001_initial.sql",
     "0002_seed_22_employees.sql",
     "0003_availability_sms.sql",
+    "0004_notification_schedule.sql",
   ])
     sqlite.exec(
       readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"),

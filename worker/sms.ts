@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { validMonth } from "../shared/availability";
 import { SCHEDULING_RULES } from "../shared/rules";
-import type { SmsPreview, Shift } from "../shared/types";
+import type { NotificationSettings, SmsPreview, Shift } from "../shared/types";
 
 export type SmsBindings = {
   DB: D1Database;
@@ -53,10 +53,21 @@ function config(env: SmsBindings) {
       : "簡訊尚未啟用：需先設定服務帳號、發送號碼及網站網址。現在不會發送或產生費用。",
   };
 }
+async function notificationSettings(env: SmsBindings): Promise<NotificationSettings> {
+  return (await env.DB.prepare(
+    "SELECT mode,lead_days,send_time,reminder_enabled FROM notification_settings WHERE id=1",
+  ).first<NotificationSettings>()) || {mode:"manual",lead_days:3,send_time:"09:00",reminder_enabled:1};
+}
+function scheduledAt(workDate: string, settings: NotificationSettings) {
+  const at = new Date(`${workDate}T${settings.send_time}:00+08:00`);
+  at.setUTCDate(at.getUTCDate() - settings.lead_days);
+  return at.toISOString();
+}
 export async function previewSms(
   env: SmsBindings,
   month: string,
 ): Promise<SmsPreview> {
+  const settings = await notificationSettings(env);
   const rows = await env.DB.prepare(
     `SELECT s.*,e.name,e.phone,e.sms_enabled,e.active FROM schedules s JOIN employees e ON e.id=s.employee_id WHERE s.work_date LIKE ? ORDER BY s.work_date,s.shift`,
   )
@@ -110,6 +121,7 @@ export async function previewSms(
         body,
         state,
         fingerprint,
+        scheduled_at: scheduledAt(row.work_date, settings),
       };
     }),
   );
@@ -120,9 +132,20 @@ export async function previewSms(
     revision: await digest(items),
     items,
     history: history.results.map(({ fingerprint, ...h }) => h),
+    settings,
   };
 }
 export const smsAdmin = new Hono<{ Bindings: SmsBindings }>();
+smsAdmin.get("/settings/current", async (c) => c.json(await notificationSettings(c.env)));
+smsAdmin.put("/settings/current", async (c) => {
+  const b = await c.req.json<NotificationSettings>();
+  if (!['manual','automatic'].includes(b.mode) || !Number.isInteger(b.lead_days) || b.lead_days < 0 || b.lead_days > 30 || !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.send_time))
+    return c.json({error:'通知設定格式錯誤'},400);
+  await c.env.DB.prepare("UPDATE notification_settings SET mode=?,lead_days=?,send_time=?,reminder_enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=1")
+    .bind(b.mode,b.lead_days,b.send_time,Number(!!b.reminder_enabled)).run();
+  await c.env.DB.prepare("INSERT INTO audit_logs(action,detail) VALUES(?,?)").bind('更新通知排程',`${b.mode==='automatic'?'自動':'手動'} · 提前 ${b.lead_days} 天 ${b.send_time}`).run();
+  return c.json({ok:true});
+});
 smsAdmin.get("/:month", async (c) => {
   const month = c.req.param("month");
   if (!validMonth(month)) return c.json({ error: "月份格式錯誤" }, 400);
@@ -131,14 +154,14 @@ smsAdmin.get("/:month", async (c) => {
 smsAdmin.post("/:month/send", async (c) => {
   const month = c.req.param("month");
   if (!validMonth(month)) return c.json({ error: "月份格式錯誤" }, 400);
-  const b = await c.req.json<{ revision: string }>();
+  const b = await c.req.json<{ revision: string; due_before?: string }>();
   const preview = await previewSms(c.env, month);
   if (!preview.ready) return c.json({ error: preview.reason }, 503);
   if (b.revision !== preview.revision)
     return c.json({ error: "班表或通知狀態已變更，請重新預覽後再發送。" }, 409);
   let accepted = 0,
     failed = 0;
-  for (const item of preview.items.filter((i) => i.state === "ready")) {
+  for (const item of preview.items.filter((i) => i.state === "ready" && (!b.due_before || i.scheduled_at <= b.due_before))) {
     const token = crypto.randomUUID().replaceAll("-", "");
     const body = item.body + `${config(c.env).base}/confirm/${token}`;
     // Claim before the external request; uncertain requests are never automatically retried.
@@ -215,6 +238,23 @@ smsAdmin.post("/:month/send", async (c) => {
     .run();
   return c.json({ accepted, failed });
 });
+export async function runScheduledNotifications(env: SmsBindings, scheduledTime = Date.now()) {
+  const settings = await notificationSettings(env);
+  if (settings.mode !== 'automatic' || !config(env).ready) return;
+  const now = new Date(scheduledTime);
+  const parts = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now);
+  const value=(type:string)=>parts.find(p=>p.type===type)?.value||'';
+  if (`${value('hour')}:${value('minute')}` !== settings.send_time) return;
+  const taipeiDate=`${value('year')}-${value('month')}-${value('day')}`;
+  const base=new Date(`${taipeiDate}T12:00:00+08:00`);
+  const months=new Set<string>();
+  for(let offset=0;offset<=settings.lead_days+35;offset+=settings.lead_days+1){const d=new Date(base);d.setUTCDate(d.getUTCDate()+offset);months.add(new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit'}).format(d));}
+  for(const month of months){
+    const preview=await previewSms(env,month);
+    if(!preview.items.some(i=>i.state==='ready'&&i.scheduled_at<=now.toISOString())) continue;
+    await smsAdmin.request(`/${month}/send`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:preview.revision,due_before:now.toISOString()})},env);
+  }
+}
 // Poll authenticated provider status rather than trusting unsigned delivery callbacks.
 smsAdmin.post("/:month/refresh", async (c) => {
   const month = c.req.param("month");

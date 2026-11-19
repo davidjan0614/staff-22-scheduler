@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { conditions, recurring } from "./conditions";
-import { smsAdmin, smsPublic, type SmsBindings } from "./sms";
+import { runScheduledNotifications, smsAdmin, smsPublic, type SmsBindings } from "./sms";
 import {
   blockedShifts,
   normalizePhone,
@@ -242,4 +242,4 @@ async function log(c: any, action: string, detail: string) {
     .bind(action, detail)
     .run();
 }
-export default app;
+export default Object.assign(app,{scheduled:async(event:ScheduledEvent,env:Bindings,ctx:ExecutionContext)=>{ctx.waitUntil(runScheduledNotifications(env,event.scheduledTime));}});

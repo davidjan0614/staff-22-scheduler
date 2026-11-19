@@ -53,6 +53,7 @@ export interface SmsPreview {
     body: string;
     state: string;
     fingerprint: string;
+    scheduled_at: string;
   }[];
   history: {
     id: number;
@@ -64,4 +65,11 @@ export interface SmsPreview {
     created_at: string;
     error: string | null;
   }[];
+  settings: NotificationSettings;
+}
+export interface NotificationSettings {
+  mode: "manual" | "automatic";
+  lead_days: number;
+  send_time: string;
+  reminder_enabled: number;
 }
